@@ -1,21 +1,21 @@
 package YangShengChangShi;
 
-import java.net.URL;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 
 import us.codecraft.webmagic.Page;
-import us.codecraft.webmagic.Request;
 import us.codecraft.webmagic.Site;
 import us.codecraft.webmagic.Spider;
 import us.codecraft.webmagic.pipeline.ConsolePipeline;
-import us.codecraft.webmagic.pipeline.FilePipeline;
 import us.codecraft.webmagic.processor.PageProcessor;
 
 public class YangShengChangShi implements PageProcessor {
 	
 	//	1、 配置
     private Site site = Site.me()
-    		.setRetryTimes(3)
+    		.setRetryTimes(0)
     		.setSleepTime(100)
     		.setCharset("utf-8")
     		.setTimeOut(3000);
@@ -23,15 +23,29 @@ public class YangShengChangShi implements PageProcessor {
 	@Override
     public void process(Page page) {
     	
-    	int 			pageNum = 0;
-    	String 			nowUrl = null;
-    	String 			nextPageStr = null;
-		String 			nextPageNum = "0";
+    	int 				pageNum = 0;
+    	String 				nowUrl = null;
+    	String 				nextPageStr = null;
+		String 				nextPageNum = "0";
+		HashSet<String>		filterLink = null;
+		List<String> 		allUrls = null;
+		LinkedList<String> 	subAllUrls = null;
+		Object 				titleInfo;
+		Object 				pageInfo;
     	
+		subAllUrls = new LinkedList<String>();
+				
         //	2、 链接发现
-    	List<String> allUrls = page.getHtml().links().regex("http://www.cnys.com/\\w+/\\d+\\.html").all();
+    	allUrls = page.getHtml().links().regex("http://www.cnys.com/\\w+/\\d+\\.html").all();
+
+    	//	链接去重
+    	filterLink = new HashSet<String>(allUrls);
+    	allUrls.clear();
+    	allUrls.addAll(filterLink);
     	
-    	for(String url : allUrls) {
+    	for(Iterator<String> it = allUrls.iterator(); it.hasNext();) {
+    		
+    		String url = it.next();
     		page.addTargetRequest(url);
     		
     		//	当前链接
@@ -40,6 +54,11 @@ public class YangShengChangShi implements PageProcessor {
     		
     		//	获取剩余页面数
 	    	nextPageStr = page.getHtml().xpath("//div[@class='page']/span/tidyText()").toString();
+	    	
+	    	if(nextPageStr == null) {
+	    		
+	    		continue;
+	    	}
 
 	    	//	判断是否有下一页 
 	    	if (nextPageStr != null) {
@@ -58,23 +77,40 @@ public class YangShengChangShi implements PageProcessor {
 	    		
 	    		//	获得页数
 				pageNum = Integer.parseInt(nextPageNum);
-				nextPageNum = "0";
+
+				//	得到剩余几页的数据
+		    	for (int i = 2; i <= pageNum; ++i) {
+		    		
+		    		//	下一页
+					nextPageStr = nowUrl + "_" + String.valueOf(i) + "." + "html";
+					
+					subAllUrls.add(nextPageStr);
+				}
 	    	}
-
-			//	得到剩余几页的数据
-	    	for (int i = 2; i <= pageNum; ++i) {
-
-	    		//	下一页
-				nextPageStr = nowUrl + "_" + String.valueOf(i) + "." + "html";
-				page.addTargetRequest(nextPageStr);
-				System.out.println(nextPageStr);
-			}
+	    
+	    	pageNum = 0;
+	    	nextPageStr = null;
+			nextPageNum = "0";
     	}
-    	//page.addTargetRequests(page.getHtml().links().regex("http://www.cnys.com/\\w+/\\d+\\.html").all());
-    	//page.addTargetRequests(page.getHtml().links().regex("http://www.cnys.com/\\w+/\\d+\\w+\\.html").all());
     	
-    	page.putField("title", page.getHtml().xpath("//div[@class='readbox']/h1/tidyText()"));
-    	page.putField("passage", page.getHtml().xpath("//div[@class='reads']/tidyText()"));
+    	//	链接去重
+    	filterLink = new HashSet<String>(subAllUrls);
+    	subAllUrls.clear();
+    	subAllUrls.addAll(filterLink);
+
+    	page.addTargetRequests(subAllUrls);
+    	
+    	titleInfo = page.getHtml().xpath("//div[@class='readbox']/h1/tidyText()");
+    	pageInfo = page.getHtml().xpath("//div[@class='reads']/tidyText()");
+    	
+    	
+    	if (titleInfo.toString() == null) {
+    		
+    		page.setSkip(true);
+    	}
+    	
+    	page.putField("title", titleInfo);
+    	page.putField("passage", pageInfo);
     }
 
     @Override
@@ -89,7 +125,7 @@ public class YangShengChangShi implements PageProcessor {
         Spider.create(new YangShengChangShi())
         .addUrl("http://www.cnys.com/")
         .addPipeline(new ConsolePipeline())
-        .thread(5)
+        .thread(1)
         .run();
     }
 }
